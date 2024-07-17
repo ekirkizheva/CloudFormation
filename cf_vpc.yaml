@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: 2010-09-09 # get from CloudFormation document page
+
+Description: Creates vpc with public and private subnets
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "VPC CIDR"
+        Parameters:
+          - CFVpcCIDR
+      - Label:
+          default: "Subnet CIDR"
+        Parameters:
+          - CFPublicSubnetCIDR
+          - CFPrivateSubnetCIDR
+          - CFPrivateSubnet2CIDR
+      - Label:
+          default: "Secure Shell CIDR"
+        Parameters:
+          - CFSSHIP
+
+Parameters:
+  CFVpcCIDR: # give a name to the Parameter
+    Default: 10.0.0.0/16 # can use the vpc IP here
+    Description: Enter IP range (CIDR notation) for this vpc
+    Type: String
+
+  CFPublicSubnetCIDR: # give a name to the Parameter
+    Default: 10.0.0.0/24 # can use the public subnet IP here
+    Description: Enter IP range (CIDR notation) for public subnet
+    Type: String
+
+  CFPrivateSubnetCIDR: # give a name to the Parameter
+    Default: 10.0.1.0/24 # can use the private subnet IP here
+    Description: Enter IP range (CIDR notation) for private subnet
+    Type: String
+
+  CFPrivateSubnet2CIDR: # give a name to the Parameter
+    Default: 10.0.2.0/24 # can use the private subnet IP here
+    Description: Enter IP range (CIDR notation) for private subnet
+    Type: String
+
+  CFSSHIP:
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Default: 0.0.0.0/0
+    Description: The IP address range that can be used to access the web server using SSH.
+    MaxLength: "18"
+    MinLength: "9"
+    Type: String
+
+Resources:
+  CFVPC: # Create VPC name
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref CFVpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: CFvpc
+
+  CFInternetGateway: # Create Internet Gateway name
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: CFIGW
+
+  CFInternetGatewayAttachment: # Attach Internet Gateway to VPC, give a name to this resource
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref CFInternetGateway
+      VpcId: !Ref CFVPC
+
+  CFPublicSubnet: # Create Public Subnet name
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref CFPublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: CFPublicSubnet
+      VpcId: !Ref CFVPC
+
+  CFPublicRouteTable: # Create Route Table name
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: CFPublicRT
+      VpcId: !Ref CFVPC
+
+  CFPublicRoute: # Add a Public Route to the Route Table
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref CFInternetGateway
+      RouteTableId: !Ref CFPublicRouteTable
+
+  CFPublicSubnetRouteTableAssociation: # Associate Public Subnet with Public RT
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref CFPublicRouteTable
+      SubnetId: !Ref CFPublicSubnet
+
+  CFPrivateSubnet: # Create Private Subnet name
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref CFPrivateSubnetCIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: CFPrivateSubnet
+      VpcId: !Ref CFVPC
+
+  CFPrivateSubnet2: # Create Private Subnet2 name
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref CFPrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: CFPrivateSubnet2
+      VpcId: !Ref CFVPC
+
+  CFWebServerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow access on ports 80 and 22
+      GroupName: CFWebServerSG
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: CFSecurityGroup
+      VpcId: !Ref CFVPC
+
+  CFDataBaseSG: # Create Security Group for the DataBase
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open database for access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref CFWebServerSG
+      Tags:
+        - Key: Name
+          Value: DataBase Security Group
+      VpcId: !Ref CFVPC
+
+Outputs:
+  CFVPC: # Export VPC ID
+    Description: VPC ID
+    Export:
+      Name: !Sub ${AWS::StackName}-CFVPC
+    Value: !Ref CFVPC
+
+  CFPublicSubnet: # Export Public Subnet
+    Description: Public Subnet ID
+    Export:
+      Name: !Sub ${AWS::StackName}-CFPublicSubnet
+    Value: !Ref CFPublicSubnet
+
+  CFPrivateSubnet: # Export Private Subnet
+    Description: Private Subnet ID
+    Export:
+      Name: !Sub ${AWS::StackName}-CFPrivateSubnet
+    Value: !Ref CFPrivateSubnet
+
+  CFPrivateSubnet2: # Export Private Subnet
+    Description: Private Subnet2 ID
+    Export:
+      Name: !Sub ${AWS::StackName}-CFPrivateSubnet2
+    Value: !Ref CFPrivateSubnet2
+
+  CFWebServerSG: # Export WebServer Security Group
+    Description: Webserver Security Group ID
+    Export:
+      Name: !Sub ${AWS::StackName}-CFWebServerSG
+    Value: !Ref CFWebServerSG
+
+  CFDataBaseSG:
+    Description: Database Security Group ID
+    Export:
+      Name: !Sub ${AWS::StackName}-CFDataBaseSG
+    Value: !Ref CFDataBaseSG

@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Creates RDS database with MySQL
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: CF VPC Stack Name
+        Parameters:
+          - CFVpcStackName
+      - Label:
+          default: Database Parameters
+        Parameters:
+          - CFDatabaseInstanceIdentifier
+          - CFDatabaseName
+          - CFDatabaseUser
+          - CFDatabasePassword
+          - CFDatabaseBackupRetentionPeriod
+          - CFDatabaseAllocatedStorage
+          - CFDatabaseInstanceClass
+          - CFMultiAZDatabase
+
+Parameters:
+  CFVpcStackName:
+    Description: The name of the vpc stack that exports values
+    Type: String
+    Default: CF-VPC
+
+  CFDatabaseInstanceIdentifier:
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*" # only allows letters and numbers and -
+    ConstraintDescription: Begin with a letter, and only contain letters and numbers
+    Default: mysqldb # version of MySQL
+    Description: DB instance identifier name
+    MaxLength: 60 # this info can be found from AWS portal
+    MinLength: 1
+    Type: String
+
+  CFDatabaseName:
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: Begin with a letter, and only contain letters and numbers
+    Default: testdb
+    Description: MySQL database name
+    MaxLength: 64
+    MinLength: 1
+    Type: String
+
+  CFDatabaseUser:
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: Begin with a letter, and only contain letters and numbers
+    Default: admin
+    Description: Database username
+    MaxLength: 16
+    MinLength: 1
+    NoEcho: true # when typing username, change the characters to dots
+    Type: String
+
+  CFDatabasePassword:
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: Only contain letters and numbers
+    Default: Password123 # database login password
+    Description: Database password
+    MaxLength: 41
+    MinLength: 8
+    NoEcho: true # when typing password, change the characters to dots
+    Type: String
+
+  CFDatabaseBackupRetentionPeriod:
+    ConstraintDescription: Database backup retention period
+    Default: 0 # 0 means do not backup DB
+    Description: The number of days for which automatic DB snapshots are retained
+    MaxValue: 35
+    MinValue: 0
+    Type: Number
+
+  CFDatabaseAllocatedStorage:
+    ConstraintDescription: Size must between 5 and 1024Gb
+    Default: 200 # default in AWS portal
+    Description: DB size (Gb)
+    MaxValue: 65536
+    MinValue: 5
+    Type: Number
+
+  CFDatabaseInstanceClass:
+    AllowedValues:
+      - db.t1.micro
+      - db.t2.micro
+      - db.t3.micro
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+    ConstraintDescription: Must select a valid database instance type
+    Default: db.t3.micro
+    Description: DB instance type
+    Type: String
+
+  CFMultiAZDatabase:
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: true or false
+    Default: false # false means do not create DB in any other Availibility Zone
+    Description: Multi-AZ MySQL Amazon RDS database
+    Type: String
+
+Resources:
+  CFDatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS database
+      SubnetIds: # use ImportValue function to get the private subnets
+        - Fn::ImportValue: !Sub ${CFVpcStackName}-CFPrivateSubnet
+        - Fn::ImportValue: !Sub ${CFVpcStackName}-CFPrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: database subnets
+
+  CFDatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: !Ref CFDatabaseAllocatedStorage
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      BackupRetentionPeriod: !Ref CFDatabaseBackupRetentionPeriod
+      DBInstanceClass: !Ref CFDatabaseInstanceClass
+      DBInstanceIdentifier: !Ref CFDatabaseInstanceIdentifier
+      DBName: !Ref CFDatabaseName
+      DBSubnetGroupName: !Ref CFDatabaseSubnetGroup
+      Engine: MySQL
+      EngineVersion: 8.0.35
+      MasterUsername: !Ref CFDatabaseUser
+      MasterUserPassword: !Ref CFDatabasePassword
+      MultiAZ: !Ref CFMultiAZDatabase
+      VPCSecurityGroups:
+        - Fn::ImportValue: !Sub ${CFVpcStackName}-CFDataBaseSG

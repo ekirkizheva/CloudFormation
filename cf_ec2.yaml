@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Creates EC2 instance for frontend service
+
+Parameters:
+  CFVpcStackName:
+    Description: The name of the vpc stack that exports values
+    Type: String
+    Default: CF-VPC
+
+  CFDatabaseHostname:
+    Description: Database hostname
+    Type: String
+    Default: mysqldb.cnym6u42y6b7.us-east-1.rds.amazonaws.com
+
+  CFDatabaseName:
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: Begin with a letter, and only contain letters and numbers
+    Default: testdb
+    Description: MySQL database name
+    MaxLength: 64
+    MinLength: 1
+    Type: String
+
+  CFDatabaseUser:
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: Begin with a letter, and only contain letters and numbers
+    Default: admin
+    Description: Database username
+    MaxLength: 16
+    MinLength: 1
+    NoEcho: true # when typing username, change the characters to dots
+    Type: String
+
+  CFDatabasePassword:
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: Only contain letters and numbers
+    Default: Password123 # database login password
+    Description: Database password
+    MaxLength: 41
+    MinLength: 8
+    NoEcho: true # when typing password, change the characters to dots
+    Type: String
+
+  CFBucketName:
+    Default: tafecloudformationsourcebucket.s3.amazonaws.com # s3 bucket name for static files
+    Description: S3 Bucket Name
+    Type: String
+
+Resources:
+  CFWebServerEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      SubnetId:
+        Fn::ImportValue: !Sub ${CFVpcStackName}-CFPublicSubnet
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub ${CFVpcStackName}-CFWebServerSG
+      KeyName: elena-root
+      ImageId: ami-0b72821e2f351e396
+      Tags:
+        - Key: Name
+          Value: cf-webservice-ec2
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          sudo -i
+          dnf update
+          dnf install -y nginx
+          dnf install -y php8.2
+          dnf install -y php-mysqlnd
+          cd /etc/nginx/
+          mv nginx.conf nginx.conf.bkp
+          wget https://${CFBucketName}/nginx.conf
+          systemctl enable nginx
+          systemctl start nginx
+          cd /var/www/html/
+          wget https://${CFBucketName}/cupcakes.zip
+          unzip cupcakes.zip
+          cd /var/www/html/cupcakes/model
+          cat <<EOF > conn.php
+          <?php
+          \$host = '${CFDatabaseHostname}';
+          \$user = '${CFDatabaseUser}';
+          \$password = '${CFDatabasePassword}';
+          \$database = '${CFDatabaseName}';
+          ?>
+          EOF
+          chmod 777 /var/www/html/cupcakes/images/
